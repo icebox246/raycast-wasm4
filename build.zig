@@ -50,4 +50,12 @@ pub fn build(b: *std.Build) !void {
 
     w4_bundle_cmd.step.dependOn(&lib.step);
     bundle_step.dependOn(&w4_bundle_cmd.step);
+
+    var fmt_step = b.step("fmt", "Format the codebase");
+    var fmt = b.addFmt(.{ .paths = &.{"src/"} });
+    fmt_step.dependOn(&fmt.step);
+
+    var fmt_check_step = b.step("fmt_check", "Check code formatting");
+    var fmt_check = b.addFmt(.{ .paths = &.{"src/"}, .check = true });
+    fmt_check_step.dependOn(&fmt_check.step);
 }
