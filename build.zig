@@ -35,4 +35,19 @@ pub fn build(b: *std.Build) !void {
     });
 
     asset_gen_step.dependOn(&w4_png2src_cmd.step);
+
+    var bundle_step = b.step("bundle", "Bundle the game to publishable format");
+
+    var w4_bundle_cmd = b.addSystemCommand(&[_][]const u8{
+        "w4",
+        "bundle",
+        "zig-out/lib/cart.wasm",
+        "--title",
+        "Raycast WASM-4",
+        "--html",
+        "zig-out/bundled/index.html",
+    });
+
+    w4_bundle_cmd.step.dependOn(&lib.step);
+    bundle_step.dependOn(&w4_bundle_cmd.step);
 }
