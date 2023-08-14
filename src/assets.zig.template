@@ -1,0 +1,11 @@
+const Sprite = @import("sprite.zig").Sprite;
+{{#sprites}}
+
+pub const {{name}} = Sprite{
+    .width = {{width}},
+    .height = {{height}},
+    .stride = {{width}},
+    .flags = {{flags}},
+    .data = &[{{length}}]u8{ {{bytes}} },
+};
+{{/sprites}}
