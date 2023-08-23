@@ -5,6 +5,7 @@ const level = @import("level.zig");
 const Level = level.Level;
 const World = @import("world.zig").World;
 const Billboard = @import("billboard.zig").Billboard;
+const Projectile = @import("projectile.zig").Projectile;
 const std = @import("std");
 const assets = @import("assets.zig");
 
@@ -12,20 +13,29 @@ pub const Player = struct {
     pos: Vec2,
     vel: Vec2 = Vec2.zero(),
     heading: f32 = 0,
+    active: bool = false,
     walking: bool = false,
+    billboard: Billboard = .{
+        .width = 32,
+        .height = 80,
+        .bottom_z = 0,
+        .pos = undefined,
+        .colors = 0x0321,
+        .sprite = &assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height),
+    },
+    fire_cooldown: u8 = 0,
 
     const linear_acceleration = 0.8;
-    const half_collision_size: f32 = 0.15;
+    pub const half_collision_size: f32 = 0.15;
     const linear_damping = 0.85;
+    const total_wand_cooldown = 30;
     const fov = math.pi / 3 * 2;
 
     fn forwardDir(self: *const @This()) Vec2 {
         return (Vec2{ .x = 0, .y = 1 }).rotate(self.heading);
     }
 
-    pub fn update(self: *@This(), lvl: *const Level) void {
-        const gamepad = w4.GAMEPAD1.*;
-
+    pub fn update(self: *@This(), gamepad: u8, world: *World) void {
         var acceleration = Vec2.zero();
 
         self.walking = false;
@@ -69,7 +79,7 @@ pub const Player = struct {
                     .y = half_collision_size * if (i & 2 == 0) -1 else 1,
                 };
                 const p = new_pos.add(offset);
-                if (lvl.tileAt(@intFromFloat(p.x), @intFromFloat(p.y))) |t| {
+                if (world.level.tileAt(@intFromFloat(p.x), @intFromFloat(p.y))) |t| {
                     if (t.isSolid()) break true;
                 }
             } else false;
@@ -79,7 +89,27 @@ pub const Player = struct {
             } else {}
         }
 
+        if (self.fire_cooldown == 0) {
+            if (gamepad & w4.BUTTON_1 != 0) {
+                const forward = self.forwardDir();
+                const proj = Projectile{
+                    .pos = self.pos.add(forward.scaled(0.5)),
+                    .vel = forward.scaled(10),
+                    .owner = self,
+                };
+                world.postProjectile(proj);
+
+                self.fire_cooldown = total_wand_cooldown;
+            }
+        } else {
+            self.fire_cooldown -= 1;
+        }
+
         self.vel = self.vel.scaled(linear_damping);
+
+        self.billboard.pos = self.pos;
+
+        world.postBillboard(&self.billboard);
     }
 
     pub fn drawMapPin(self: @This(), ox: i32, oy: i32, ts: u32) void {
@@ -126,8 +156,14 @@ pub const Player = struct {
                 }
             }
         }
+    }
 
-        const weapon_sprite = assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height);
+    pub fn drawHUD(self: *const @This(), world: *World) void {
+        const weapon_sprite = if (self.fire_cooldown == total_wand_cooldown)
+            assets.wand.subSprite(assets.wand.width / 2, 0, assets.wand.width / 2, assets.wand.height)
+        else
+            assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height);
+
         var weapon_x: i32 = @intCast((World.view_width - weapon_sprite.width) / 2);
         var weapon_y: i32 = @intCast(World.view_height - weapon_sprite.height + 3);
 
@@ -135,18 +171,29 @@ pub const Player = struct {
         const t = @as(f32, @floatFromInt(world.tick)) / 10;
         weapon_x += @intFromFloat(0.3 * math.cos(t) * speed);
         weapon_y -= @intFromFloat(0.1 * math.cos(2 * t) * speed);
+        weapon_y += 10 * @as(u16, (@intCast(self.fire_cooldown))) * @as(u16, (@intCast(self.fire_cooldown))) / total_wand_cooldown / total_wand_cooldown;
 
         w4.DRAW_COLORS.* = 0x0321;
         weapon_sprite.draw(weapon_x, weapon_y);
+
+        w4.rect(0, World.view_height, 160, 160 - World.view_height);
+
+        world.level.drawMap(0, World.view_height, 2);
+        self.drawMapPin(0, World.view_height, 2);
     }
 
-    pub fn drawBillboard(self: *const @This(), world: *World, billboard: *const Billboard) void {
-        const offset = billboard.pos.sub(self.pos);
+    pub fn updateBillboardDepth(self: *const @This(), bb: *World.BufferedBillboard) void {
+        const offset = bb.billboard.pos.sub(self.pos);
         const pos = offset.rotate(-self.heading);
 
-        const depth = pos.y;
+        bb.depth = pos.y;
+    }
 
-        if (depth < 0) return; // object is behind camera
+    pub fn drawBillboard(self: *const @This(), world: *World, bb: *const World.BufferedBillboard) void {
+        if (bb.depth < 0.05) return; // object is behind camera
+
+        const offset = bb.billboard.pos.sub(self.pos);
+        const pos = offset.rotate(-self.heading);
 
         const forward = Vec2{ .x = 0, .y = 1 };
         const left_edge = forward.rotate(-fov / 2);
@@ -157,19 +204,19 @@ pub const Player = struct {
         const x = pos.x / pos.y;
 
         const screen_x = math.lerp(0, @floatFromInt(World.view_width - 1), ((x - left_x) / (right_x - left_x)));
-        const bottom_screen_y = @as(f32, @floatFromInt(World.view_height)) / 2 + (@as(f32, @floatFromInt(World.view_height)) * (0.5 - billboard.bottom_z)) / depth;
-        const screen_w = @as(f32, @floatFromInt(billboard.width)) / depth;
-        const screen_h = @as(f32, @floatFromInt(billboard.height)) / depth;
+        const bottom_screen_y = @as(f32, @floatFromInt(World.view_height)) / 2 + (@as(f32, @floatFromInt(World.view_height)) * (0.5 - bb.billboard.bottom_z)) / bb.depth;
+        const screen_w = @as(f32, @floatFromInt(bb.billboard.width)) / bb.depth;
+        const screen_h = @as(f32, @floatFromInt(bb.billboard.height)) / bb.depth;
 
-        w4.DRAW_COLORS.* = 0x2;
+        w4.DRAW_COLORS.* = bb.billboard.colors;
         const left_pixel_x = @as(i32, @intFromFloat(screen_x - screen_w / 2));
         const right_pixel_x = @as(i32, @intFromFloat(screen_x + screen_w / 2));
         var px = left_pixel_x;
         if (px < 0) px = 0;
         while (px <= right_pixel_x and px < World.view_width) : (px += 1) {
-            if (depth > world.depth_buffer[@intCast(px)]) continue;
-            w4.vline(World.view_offset_x + px, World.view_offset_y + @as(i32, @intFromFloat(bottom_screen_y - screen_h)), @intFromFloat(screen_h));
-            world.depth_buffer[@intCast(px)] = depth;
+            const uv_x = @as(f32, @floatFromInt(px - left_pixel_x)) / @as(f32, @floatFromInt((right_pixel_x - left_pixel_x)));
+            if (bb.depth > world.depth_buffer[@intCast(px)]) continue;
+            bb.billboard.sprite.drawScaledVline(World.view_offset_x + px, World.view_offset_y + @as(i32, @intFromFloat(bottom_screen_y - screen_h)), @intFromFloat(screen_h), uv_x, 0, 1);
         }
     }
 };

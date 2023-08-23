@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) !void {
         "src/assets.zig.template",
         "assets/tiles.png",
         "assets/wand.png",
+        "assets/projectile.png",
         "-o",
         "src/assets.zig",
     });
