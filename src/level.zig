@@ -3,6 +3,7 @@ const w4 = @import("wasm4.zig");
 const Vec2 = @import("vec.zig").Vec2;
 const Sprite = @import("sprite.zig").Sprite;
 const assets = @import("assets.zig");
+const math = @import("math.zig");
 
 pub const Tile = enum(u3) {
     empty,
@@ -117,37 +118,92 @@ pub const Level = struct {
     }
 
     pub fn castRay(lvl: *const Level, origin: Vec2, dir: Vec2) ?RaycastHit {
-        const step = dir.scaled(0.01);
+        const x_hit: ?RaycastHit = x_march: {
+            var current = (calc_current: {
+                const tg_x = if (dir.x > 0) @ceil(origin.x) else @floor(origin.x);
+                const dx = tg_x - origin.x;
+                break :calc_current origin.add(dir.scaled(math.abs(dx / dir.x)));
+            }).add(dir.scaled(0.00001));
+            const step = dir.scaled(1 / math.abs(dir.x));
+            while (lvl.tileAt(@intFromFloat(current.x), @intFromFloat(current.y))) |t| : (current = current.add(step)) {
+                if (t.isSolid()) {
+                    var hit = RaycastHit{
+                        .point = current,
+                        .tile = t,
+                        .orient = undefined,
+                        .uv = undefined,
+                    };
 
-        var current = origin;
+                    const tx = @floor(current.x);
+                    const ty = @floor(current.y);
 
-        while (lvl.tileAt(@intFromFloat(current.x), @intFromFloat(current.y))) |t| : (current = current.add(step)) {
-            if (t.isSolid()) {
-                var hit = RaycastHit{
-                    .point = current,
-                    .tile = t,
-                    .orient = undefined,
-                    .uv = undefined,
-                };
+                    const dx = if (dir.x > 0) current.x - tx else tx - current.x + 1;
+                    const dy = if (dir.y > 0) current.y - ty else ty - current.y + 1;
 
-                const tx = @floor(current.x);
-                const ty = @floor(current.y);
+                    if (dx < dy) {
+                        hit.orient = .x;
+                        hit.uv = current.y - ty;
+                    } else {
+                        hit.orient = .y;
+                        hit.uv = current.x - tx;
+                    }
 
-                const dx = if (dir.x > 0) current.x - tx else tx - current.x + 1;
-                const dy = if (dir.y > 0) current.y - ty else ty - current.y + 1;
-
-                if (dx < dy) {
-                    hit.orient = .x;
-                    hit.uv = current.y - ty;
-                } else {
-                    hit.orient = .y;
-                    hit.uv = current.x - tx;
+                    break :x_march hit;
                 }
-
-                return hit;
+            } else {
+                break :x_march null;
             }
-        } else {
-            return null;
+        };
+
+        const y_hit: ?RaycastHit = x_march: {
+            var current = (calc_current: {
+                const tg_y = if (dir.y > 0) @ceil(origin.y) else @floor(origin.y);
+                const dy = tg_y - origin.y;
+                break :calc_current origin.add(dir.scaled(math.abs(dy / dir.y)));
+            }).add(dir.scaled(0.00001));
+            const step = dir.scaled(1 / math.abs(dir.y));
+            while (lvl.tileAt(@intFromFloat(current.x), @intFromFloat(current.y))) |t| : (current = current.add(step)) {
+                if (t.isSolid()) {
+                    var hit = RaycastHit{
+                        .point = current,
+                        .tile = t,
+                        .orient = undefined,
+                        .uv = undefined,
+                    };
+
+                    const tx = @floor(current.x);
+                    const ty = @floor(current.y);
+
+                    const dx = if (dir.x > 0) current.x - tx else tx - current.x + 1;
+                    const dy = if (dir.y > 0) current.y - ty else ty - current.y + 1;
+
+                    if (dx < dy) {
+                        hit.orient = .x;
+                        hit.uv = current.y - ty;
+                    } else {
+                        hit.orient = .y;
+                        hit.uv = current.x - tx;
+                    }
+
+                    break :x_march hit;
+                }
+            } else {
+                break :x_march null;
+            }
+        };
+
+        if (x_hit != null and y_hit != null) {
+            if (x_hit.?.point.sub(origin).squareLength() < y_hit.?.point.sub(origin).squareLength()) {
+                return x_hit;
+            } else {
+                return y_hit;
+            }
         }
+
+        if (x_hit) |_| {
+            return x_hit;
+        }
+
+        return y_hit;
     }
 };
