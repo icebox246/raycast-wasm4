@@ -50,11 +50,17 @@ pub const RaycastHit = struct {
     uv: f32,
 };
 
+pub const Location = struct {
+    pos: Vec2,
+    heading: f32 = 0,
+};
+
 pub const Level = struct {
     width: u16,
     tiles: []Tile,
+    locations: []const Location,
 
-    pub fn fromASCII(comptime str: []const u8) @This() {
+    pub fn fromASCII(comptime str: []const u8, locations: []const Location) @This() {
         @setEvalBranchQuota(100000);
         var line_iter = std.mem.tokenizeScalar(u8, str, '\n');
 
@@ -82,6 +88,7 @@ pub const Level = struct {
         return .{
             .width = lvl_width,
             .tiles = &tiles,
+            .locations = locations,
         };
     }
 

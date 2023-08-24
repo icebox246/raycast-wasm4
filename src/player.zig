@@ -8,9 +8,10 @@ const Billboard = @import("billboard.zig").Billboard;
 const Projectile = @import("projectile.zig").Projectile;
 const std = @import("std");
 const assets = @import("assets.zig");
+const sound = @import("sound.zig");
 
 pub const Player = struct {
-    pos: Vec2,
+    pos: Vec2 = Vec2.zero(),
     vel: Vec2 = Vec2.zero(),
     heading: f32 = 0,
     active: bool = false,
@@ -24,18 +25,52 @@ pub const Player = struct {
         .sprite = &assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height),
     },
     fire_cooldown: u8 = 0,
+    health: u8 = 0,
+    displayed_health_percentage: f32 = 1,
+    local: bool = false,
+    respawn_cooldown: u8 = total_respawn_cooldown,
 
     const linear_acceleration = 0.8;
     pub const half_collision_size: f32 = 0.15;
     const linear_damping = 0.85;
     const total_wand_cooldown = 30;
     const fov = math.pi / 3 * 2;
+    const max_health = 3;
+    const total_respawn_cooldown = 180;
 
     fn forwardDir(self: *const @This()) Vec2 {
         return (Vec2{ .x = 0, .y = 1 }).rotate(self.heading);
     }
 
     pub fn update(self: *@This(), gamepad: u8, world: *World) void {
+        if (gamepad & w4.BUTTON_UP != 0) {
+            math.shuffleRandom();
+        }
+        if (gamepad & w4.BUTTON_DOWN != 0) {
+            math.shuffleRandom();
+        }
+        if (gamepad & w4.BUTTON_LEFT != 0) {
+            math.shuffleRandom();
+        }
+        if (gamepad & w4.BUTTON_RIGHT != 0) {
+            math.shuffleRandom();
+        }
+
+        world.postBillboard(&self.billboard);
+
+        if (self.health == 0) {
+            self.billboard.pos = Vec2.zero();
+            if (self.respawn_cooldown > 0) {
+                self.respawn_cooldown -= 1;
+            } else {
+                self.health = max_health;
+                const loc = world.pickUnoccupiedSpawnLocation();
+                self.pos = loc.pos;
+                self.heading = loc.heading;
+            }
+            return;
+        }
+
         var acceleration = Vec2.zero();
 
         self.walking = false;
@@ -89,8 +124,11 @@ pub const Player = struct {
             } else {}
         }
 
-        if (self.fire_cooldown == 0) {
+        if (self.fire_cooldown == 0 and self.health > 0) {
             if (gamepad & w4.BUTTON_1 != 0) {
+                if (self.local) {
+                    sound.playFireballThrow();
+                }
                 const forward = self.forwardDir();
                 const proj = Projectile{
                     .pos = self.pos.add(forward.scaled(0.5)),
@@ -108,8 +146,6 @@ pub const Player = struct {
         self.vel = self.vel.scaled(linear_damping);
 
         self.billboard.pos = self.pos;
-
-        world.postBillboard(&self.billboard);
     }
 
     pub fn drawMapPin(self: @This(), ox: i32, oy: i32, ts: u32) void {
@@ -158,8 +194,8 @@ pub const Player = struct {
         }
     }
 
-    pub fn drawHUD(self: *const @This(), world: *World) void {
-        const weapon_sprite = if (self.fire_cooldown == total_wand_cooldown)
+    pub fn drawHUD(self: *@This(), world: *World) void {
+        const weapon_sprite = if (self.fire_cooldown >= 3 * total_wand_cooldown / 4)
             assets.wand.subSprite(assets.wand.width / 2, 0, assets.wand.width / 2, assets.wand.height)
         else
             assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height);
@@ -173,13 +209,30 @@ pub const Player = struct {
         weapon_y -= @intFromFloat(0.1 * math.cos(2 * t) * speed);
         weapon_y += 10 * @as(u16, (@intCast(self.fire_cooldown))) * @as(u16, (@intCast(self.fire_cooldown))) / total_wand_cooldown / total_wand_cooldown;
 
-        w4.DRAW_COLORS.* = 0x0321;
-        weapon_sprite.draw(weapon_x, weapon_y);
+        if (self.health > 0) {
+            w4.DRAW_COLORS.* = 0x0321;
+            weapon_sprite.draw(weapon_x, weapon_y);
+        }
 
+        w4.DRAW_COLORS.* = 0x31;
         w4.rect(0, World.view_height, 160, 160 - World.view_height);
 
-        world.level.drawMap(0, World.view_height, 2);
-        self.drawMapPin(0, World.view_height, 2);
+        world.level.drawMap(1, World.view_height + 1, 2);
+        self.drawMapPin(1, World.view_height + 1, 2);
+
+        if (self.health > 0) {
+            self.displayed_health_percentage = math.lerp(self.displayed_health_percentage, @as(f32, @floatFromInt(self.health)) / @as(f32, @floatFromInt(max_health)), 0.15);
+            w4.DRAW_COLORS.* = 0x31;
+            w4.rect(84, World.view_height + 3, 72, 6);
+            w4.DRAW_COLORS.* = 0x2;
+            w4.rect(85, World.view_height + 4, @intFromFloat(70 * self.displayed_health_percentage), 4);
+        } else {
+            var buf: [15]u8 = undefined;
+            @memcpy(&buf, "Respawn\n   in %");
+            buf[14] = '0' + (self.respawn_cooldown + 59) / 60;
+            w4.DRAW_COLORS.* = 0x13;
+            w4.text(&buf, 84, World.view_height + 3);
+        }
     }
 
     pub fn updateBillboardDepth(self: *const @This(), bb: *World.BufferedBillboard) void {
@@ -214,9 +267,24 @@ pub const Player = struct {
         var px = left_pixel_x;
         if (px < 0) px = 0;
         while (px <= right_pixel_x and px < World.view_width) : (px += 1) {
-            const uv_x = @as(f32, @floatFromInt(px - left_pixel_x)) / @as(f32, @floatFromInt((right_pixel_x - left_pixel_x)));
+            const uv_x = @as(f32, @floatFromInt(px - left_pixel_x)) / @as(f32, @floatFromInt((right_pixel_x - left_pixel_x + 1)));
             if (bb.depth > world.depth_buffer[@intCast(px)]) continue;
             bb.billboard.sprite.drawScaledVline(World.view_offset_x + px, World.view_offset_y + @as(i32, @intFromFloat(bottom_screen_y - screen_h)), @intFromFloat(screen_h), uv_x, 0, 1);
         }
+    }
+
+    pub fn damage(self: *@This()) enum { alive, died, dead } {
+        if (self.health == 0) return .dead;
+
+        self.health -= 1;
+        if (self.local) {
+            sound.playFireballHit();
+        }
+
+        if (self.health == 0) {
+            self.respawn_cooldown = total_respawn_cooldown;
+            return .died;
+        }
+        return .alive;
     }
 };

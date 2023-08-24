@@ -1,4 +1,4 @@
-pub const pi: f32 = 3.14159265358979323846;
+pub const pi: f32 = @import("std").math.atan(@as(f32, 1)) * 4;
 
 const sine_lookup_size = 256;
 
@@ -36,4 +36,18 @@ pub fn abs(x: f32) f32 {
 pub fn mod(x: f32, m: f32) f32 {
     const reps = @floor(x / m);
     return x - reps * m;
+}
+
+var rand_int_state: u32 = 0xf00dbabe;
+
+pub fn shuffleRandom() void {
+    rand_int_state =
+        (rand_int_state >> 1) | ((((rand_int_state >> 0) ^ (rand_int_state >> 2) ^
+        (rand_int_state >> 3) ^ (rand_int_state >> 5)) &
+        1) << 15);
+}
+
+pub fn random() u32 {
+    shuffleRandom();
+    return rand_int_state;
 }
