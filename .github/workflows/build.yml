@@ -26,7 +26,7 @@ jobs:
       - name: Build project
         run: |
           zig build gen
-          zig build
+          zig build -Doptimize=ReleaseSmall
 
       - name: Bundle cartridge
         working-directory: ./zig-out

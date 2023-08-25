@@ -1,5 +1,9 @@
 # raycast-wasm4
 
+![screenshot](./screenshot.png)
+
+[![Build and publish the game](https://github.com/icebox246/raycast-wasm4/actions/workflows/build.yml/badge.svg)](https://github.com/icebox246/raycast-wasm4/actions/workflows/build.yml)
+
 A game written in Zig for the [WASM-4](https://wasm4.org) fantasy console.
 
 ## Building
@@ -24,10 +28,6 @@ Then run it with:
 ```shell
 w4 run zig-out/lib/cart.wasm
 ```
-
-## Screenshots
-
-![screenshot](./screenshot.png)
 
 ## Credits
 
