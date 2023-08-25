@@ -38,7 +38,7 @@ pub const Projectile = struct {
 
                     const sqrThreshold = (Player.half_collision_size + 0.1) * (Player.half_collision_size + 0.1);
                     for (&world.players) |*player| {
-                        if (player == self.owner or !player.active) continue;
+                        if (player == self.owner or !player.active or player.health == 0) continue;
 
                         if (self.pos.sub(player.pos).squareLength() <= sqrThreshold) {
                             self.startDying();

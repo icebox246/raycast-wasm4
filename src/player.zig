@@ -39,9 +39,9 @@ pub const Player = struct {
     const linear_acceleration = 0.8;
     pub const half_collision_size: f32 = 0.2;
     const linear_damping = 0.85;
-    const total_wand_cooldown = 30;
+    const total_wand_cooldown = 25;
     const fov = math.pi / 3 * 2;
-    const max_health = 3;
+    const max_health = 5;
     const total_respawn_cooldown = 180;
 
     fn forwardDir(self: *const @This()) Vec2 {
@@ -139,8 +139,8 @@ pub const Player = struct {
                 }
                 const forward = self.forwardDir();
                 const proj = Projectile{
-                    .pos = self.pos.add(forward.scaled(0.5)),
-                    .vel = forward.scaled(10).add(self.vel),
+                    .pos = self.pos,
+                    .vel = forward.scaled(10).add(self.vel.scaled(0.5)),
                     .owner = self,
                 };
                 world.postProjectile(proj);
@@ -215,6 +215,15 @@ pub const Player = struct {
         w4.DRAW_COLORS.* = 0x2;
         w4.rect(World.view_offset_x, World.view_offset_y + @as(i32, @intCast(World.view_height / 2)), World.view_width, World.view_height / 2);
 
+        {
+            w4.DRAW_COLORS.* = 0x4321;
+            const offset: i32 = @intFromFloat(-self.heading / (math.pi) * @as(f32, @floatFromInt(assets.sky.width)));
+            const offset_clamped = @mod(offset, 160);
+            assets.sky.draw(offset_clamped, 3);
+
+            assets.sky.draw(offset_clamped - 160, 3);
+        }
+
         for (0..World.view_width) |column| {
             const ray_dir = Vec2.lerp(left_edge, right_edge, t_step * @as(f32, @floatFromInt(column + 1))).normalized();
             const maybe_hit = world.level.castRay(self.pos, ray_dir);
@@ -288,6 +297,16 @@ pub const Player = struct {
 
             w4.DRAW_COLORS.* = 0x13;
             w4.text(&buf, 84, World.view_height + 20);
+        }
+
+        {
+            var buf: [2]u8 = undefined;
+            @memcpy(&buf, "P%");
+
+            buf[1] = '1' + (w4.NETPLAY.* & 0b11);
+
+            w4.DRAW_COLORS.* = 0x14;
+            w4.text(&buf, 160 - 16 - 2, 160 - 8 - 2);
         }
     }
 

@@ -237,7 +237,7 @@ pub const World = struct {
         const padding = 20;
 
         self.players[0].pos = Vec2{ .x = 8, .y = 7 };
-        self.players[0].heading = @as(f32, @floatFromInt(self.tick)) * 0.01;
+        self.players[0].heading = math.mod(@as(f32, @floatFromInt(self.tick)) * 0.01, 2 * math.pi);
         self.players[0].drawPerspective(self);
 
         w4.DRAW_COLORS.* = 0x2;
@@ -287,7 +287,7 @@ pub const World = struct {
     fn drawVictoryScreen(self: *@This(), gamepads: []const u8) void {
         const padding = 20;
         self.players[0].pos = Vec2{ .x = 8, .y = 7 };
-        self.players[0].heading = @as(f32, @floatFromInt(self.tick)) * 0.01;
+        self.players[0].heading = math.mod(@as(f32, @floatFromInt(self.tick)) * 0.01, 2 * math.pi);
         self.players[0].drawPerspective(self);
 
         w4.DRAW_COLORS.* = 0x2;
