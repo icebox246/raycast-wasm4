@@ -11,14 +11,16 @@ const assets = @import("assets.zig");
 
 pub const World = struct {
     const max_player_count = 4;
-    const max_billboard_count = 64;
-    const max_projectiles_count = 64;
+    const max_billboard_count = 128;
+    const max_projectiles_count = 128;
 
     pub const view_offset_x = 0;
     pub const view_offset_y = 0;
 
     pub const view_width: u32 = 160;
     pub const view_height: u32 = 120;
+
+    pub const victory_threshold: u8 = 9;
 
     pub const BufferedBillboard = struct {
         billboard: *const Billboard,
@@ -44,6 +46,9 @@ pub const World = struct {
     tick: u32,
 
     waiting: bool,
+    victory: bool,
+
+    input_cooldown: u8,
 
     pub fn init() @This() {
         var world: @This() = undefined;
@@ -83,12 +88,12 @@ pub const World = struct {
                 .heading = -0.75 * math.pi,
             },
             .{
-                .pos = .{ .x = 32, .y = 12.5 },
+                .pos = .{ .x = 32, .y = 12 },
                 .heading = 0.75 * math.pi,
             },
             .{
-                .pos = .{ .x = 32.5, .y = 4.5 },
-                .heading = -math.pi / 4,
+                .pos = .{ .x = 32.5, .y = 3.5 },
+                .heading = math.pi / 4,
             },
         });
 
@@ -99,12 +104,19 @@ pub const World = struct {
         world.billboards_count = 0;
 
         world.waiting = true;
+        world.victory = false;
+
+        world.input_cooldown = 30;
 
         return world;
     }
 
     pub fn update(self: *@This()) void {
         // const is_netplay = w4.NETPLAY.* & 0b100 != 0;
+
+        self.tick += 1;
+
+        if (self.input_cooldown > 0) self.input_cooldown -= 1;
 
         const billie = Billboard{
             .pos = Vec2.zero(),
@@ -115,6 +127,8 @@ pub const World = struct {
             .sprite = &assets.wand,
         };
 
+        math.shuffleRandom();
+
         self.postBillboard(&billie);
 
         const gamepads = [_]u8{
@@ -123,6 +137,11 @@ pub const World = struct {
             w4.GAMEPAD3.*,
             w4.GAMEPAD4.*,
         };
+
+        if (self.victory) {
+            self.drawVictoryScreen(&gamepads);
+            return;
+        }
 
         if (self.waiting) {
             self.drawWaitingScreen(&gamepads);
@@ -135,6 +154,11 @@ pub const World = struct {
             if (player.active) {
                 player.local = i == local_player_index;
                 player.update(gamepad, self);
+                if (player.score == victory_threshold) {
+                    self.victory = true;
+                    self.input_cooldown = 30;
+                    return;
+                }
             }
         }
 
@@ -161,8 +185,6 @@ pub const World = struct {
         self.billboards_count = 0;
 
         self.players[local_player_index].drawHUD(self);
-
-        self.tick += 1;
     }
 
     pub fn postBillboard(self: *@This(), bb: *const Billboard) void {
@@ -213,8 +235,23 @@ pub const World = struct {
 
     fn drawWaitingScreen(self: *@This(), gamepads: []const u8) void {
         const padding = 20;
+
+        self.players[0].pos = Vec2{ .x = 8, .y = 7 };
+        self.players[0].heading = @as(f32, @floatFromInt(self.tick)) * 0.01;
+        self.players[0].drawPerspective(self);
+
+        w4.DRAW_COLORS.* = 0x2;
+        w4.rect(0, view_height, 160, 160 - view_height);
+
         w4.DRAW_COLORS.* = 0x43;
         w4.rect(padding, padding, 160 - padding * 2, 160 - padding * 2);
+
+        if ((self.tick >> 5) & 1 == 0) {
+            w4.DRAW_COLORS.* = 0x34;
+        } else {
+            w4.DRAW_COLORS.* = 0x32;
+        }
+        w4.text("\x85 MagicStrik \x84", padding + 4, padding + 4);
 
         for (&self.players, gamepads, 0..) |*player, gamepad, i| {
             if (gamepad & (w4.BUTTON_1 | w4.BUTTON_2) != 0) {
@@ -232,16 +269,61 @@ pub const World = struct {
 
             buf[1] = '1' + @as(u8, @intCast(i));
 
-            w4.text(&buf, padding + 4, @intCast(padding + 4 + 12 * i));
+            w4.text(&buf, padding + 4, @intCast(padding + 16 + 12 * i));
         }
-
-        if (gamepads[0] & w4.BUTTON_2 != 0) {
-            self.waiting = false;
-            return;
+        if (self.input_cooldown == 0) {
+            w4.DRAW_COLORS.* = 0x31;
+            w4.text("P1 \x81: start", padding + 2, 160 - padding - 8 - 1);
+            if (gamepads[0] & w4.BUTTON_2 != 0) {
+                self.waiting = false;
+                return;
+            }
         }
 
         w4.DRAW_COLORS.* = 0x31;
-        w4.text("   \x80: ready" ++ "\n" ++
-            "P1 \x81: start", padding + 2, 160 - padding - 8 * 2 - 1);
+        w4.text("   \x80: ready", padding + 2, 160 - padding - 8 * 2 - 1);
+    }
+
+    fn drawVictoryScreen(self: *@This(), gamepads: []const u8) void {
+        const padding = 20;
+        self.players[0].pos = Vec2{ .x = 8, .y = 7 };
+        self.players[0].heading = @as(f32, @floatFromInt(self.tick)) * 0.01;
+        self.players[0].drawPerspective(self);
+
+        w4.DRAW_COLORS.* = 0x2;
+        w4.rect(0, view_height, 160, 160 - view_height);
+
+        w4.DRAW_COLORS.* = 0x43;
+        w4.rect(padding, padding, 160 - padding * 2, 160 - padding * 2);
+
+        w4.DRAW_COLORS.* = 0x34;
+        w4.text("  Round over!", padding + 4, padding + 4);
+
+        for (&self.players, 0..) |*player, i| {
+            if (!player.active) continue;
+
+            var buf: [5]u8 = undefined;
+            @memcpy(&buf, "P%: %");
+
+            buf[1] = '1' + @as(u8, @intCast(i));
+
+            buf[4] = '0' + player.score;
+
+            if (player.score == victory_threshold) {
+                w4.DRAW_COLORS.* = 0x34;
+            } else {
+                w4.DRAW_COLORS.* = 0x31;
+            }
+            w4.text(&buf, padding + 4, @intCast(padding + 14 + 12 * i));
+        }
+        if (self.input_cooldown == 0) {
+            w4.DRAW_COLORS.* = 0x31;
+            w4.text("P1 \x81: start", padding + 2, 160 - padding - 8 * 2 - 1);
+
+            if (gamepads[0] & w4.BUTTON_2 != 0) {
+                self.* = init();
+                return;
+            }
+        }
     }
 };

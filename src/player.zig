@@ -10,6 +10,11 @@ const std = @import("std");
 const assets = @import("assets.zig");
 const sound = @import("sound.zig");
 
+const mage_sprite_0 = &assets.mage.subSprite(0 * assets.mage.width / 4, 0, assets.mage.width / 4, assets.mage.height);
+const mage_sprite_1 = &assets.mage.subSprite(1 * assets.mage.width / 4, 0, assets.mage.width / 4, assets.mage.height);
+const mage_sprite_2 = &assets.mage.subSprite(2 * assets.mage.width / 4, 0, assets.mage.width / 4, assets.mage.height);
+const mage_sprite_3 = &assets.mage.subSprite(3 * assets.mage.width / 4, 0, assets.mage.width / 4, assets.mage.height);
+
 pub const Player = struct {
     pos: Vec2 = Vec2.zero(),
     vel: Vec2 = Vec2.zero(),
@@ -22,16 +27,17 @@ pub const Player = struct {
         .bottom_z = 0,
         .pos = undefined,
         .colors = 0x0321,
-        .sprite = &assets.wand.subSprite(0, 0, assets.wand.width / 2, assets.wand.height),
+        .sprite = mage_sprite_0,
     },
     fire_cooldown: u8 = 0,
     health: u8 = 0,
     displayed_health_percentage: f32 = 1,
     local: bool = false,
     respawn_cooldown: u8 = total_respawn_cooldown,
+    score: u8 = 0,
 
     const linear_acceleration = 0.8;
-    pub const half_collision_size: f32 = 0.15;
+    pub const half_collision_size: f32 = 0.2;
     const linear_damping = 0.85;
     const total_wand_cooldown = 30;
     const fov = math.pi / 3 * 2;
@@ -59,7 +65,8 @@ pub const Player = struct {
         world.postBillboard(&self.billboard);
 
         if (self.health == 0) {
-            self.billboard.pos = Vec2.zero();
+            if (self.billboard.height > 20)
+                self.billboard.height -= 8;
             if (self.respawn_cooldown > 0) {
                 self.respawn_cooldown -= 1;
             } else {
@@ -70,6 +77,7 @@ pub const Player = struct {
             }
             return;
         }
+        self.billboard.height = 80;
 
         var acceleration = Vec2.zero();
 
@@ -83,10 +91,10 @@ pub const Player = struct {
         }
         if (gamepad & w4.BUTTON_2 == 0) {
             if (gamepad & w4.BUTTON_LEFT != 0) {
-                self.heading -= 0.1;
+                self.heading -= 0.07;
             }
             if (gamepad & w4.BUTTON_RIGHT != 0) {
-                self.heading += 0.1;
+                self.heading += 0.07;
             }
             self.heading = math.mod(self.heading, 2 * math.pi);
         } else {
@@ -132,7 +140,7 @@ pub const Player = struct {
                 const forward = self.forwardDir();
                 const proj = Projectile{
                     .pos = self.pos.add(forward.scaled(0.5)),
-                    .vel = forward.scaled(10),
+                    .vel = forward.scaled(10).add(self.vel),
                     .owner = self,
                 };
                 world.postProjectile(proj);
@@ -146,6 +154,44 @@ pub const Player = struct {
         self.vel = self.vel.scaled(linear_damping);
 
         self.billboard.pos = self.pos;
+
+        {
+            const local_player_heading: f32 = for (&world.players) |p| {
+                if (p.local) break p.heading;
+            } else 0;
+
+            const heading_delta = math.mod(local_player_heading - self.heading - math.pi + math.pi / 6, 2 * math.pi);
+
+            const turn_tick: u32 = @intFromFloat(@floor(heading_delta / (2 * math.pi / 6)));
+
+            switch (turn_tick) {
+                0 => {
+                    self.billboard.sprite = mage_sprite_0;
+                    self.billboard.flipped_h = false;
+                },
+                1 => {
+                    self.billboard.sprite = mage_sprite_1;
+                    self.billboard.flipped_h = false;
+                },
+                2 => {
+                    self.billboard.sprite = mage_sprite_2;
+                    self.billboard.flipped_h = false;
+                },
+                3 => {
+                    self.billboard.sprite = mage_sprite_3;
+                    self.billboard.flipped_h = false;
+                },
+                4 => {
+                    self.billboard.sprite = mage_sprite_2;
+                    self.billboard.flipped_h = true;
+                },
+                5 => {
+                    self.billboard.sprite = mage_sprite_1;
+                    self.billboard.flipped_h = true;
+                },
+                else => unreachable,
+            }
+        }
     }
 
     pub fn drawMapPin(self: @This(), ox: i32, oy: i32, ts: u32) void {
@@ -233,6 +279,16 @@ pub const Player = struct {
             w4.DRAW_COLORS.* = 0x13;
             w4.text(&buf, 84, World.view_height + 3);
         }
+
+        {
+            var buf: [8]u8 = undefined;
+            @memcpy(&buf, "Score: %");
+
+            buf[7] = '0' + self.score;
+
+            w4.DRAW_COLORS.* = 0x13;
+            w4.text(&buf, 84, World.view_height + 20);
+        }
     }
 
     pub fn updateBillboardDepth(self: *const @This(), bb: *World.BufferedBillboard) void {
@@ -267,7 +323,8 @@ pub const Player = struct {
         var px = left_pixel_x;
         if (px < 0) px = 0;
         while (px <= right_pixel_x and px < World.view_width) : (px += 1) {
-            const uv_x = @as(f32, @floatFromInt(px - left_pixel_x)) / @as(f32, @floatFromInt((right_pixel_x - left_pixel_x + 1)));
+            const uv_x_raw = @as(f32, @floatFromInt(px - left_pixel_x)) / @as(f32, @floatFromInt((right_pixel_x - left_pixel_x + 1)));
+            const uv_x = if (bb.billboard.flipped_h) 1 - uv_x_raw else uv_x_raw;
             if (bb.depth > world.depth_buffer[@intCast(px)]) continue;
             bb.billboard.sprite.drawScaledVline(World.view_offset_x + px, World.view_offset_y + @as(i32, @intFromFloat(bottom_screen_y - screen_h)), @intFromFloat(screen_h), uv_x, 0, 1);
         }

@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) !void {
         "assets/tiles.png",
         "assets/wand.png",
         "assets/projectile.png",
+        "assets/mage.png",
         "-o",
         "src/assets.zig",
     });

@@ -3,6 +3,7 @@ const Vec2 = @import("vec.zig").Vec2;
 const Billboard = @import("billboard.zig").Billboard;
 const Player = @import("player.zig").Player;
 const assets = @import("assets.zig");
+const sound = @import("sound.zig");
 
 pub const Projectile = struct {
     pos: Vec2,
@@ -16,7 +17,7 @@ pub const Projectile = struct {
         .sprite = &assets.projectile.subSprite(0, 0, assets.projectile.width / 2, assets.projectile.height),
     },
     life: u8 = 0x83,
-    owner: *const Player,
+    owner: *Player,
 
     fn startDying(self: *@This()) void {
         self.life ^= 0x80;
@@ -42,8 +43,15 @@ pub const Projectile = struct {
                         if (self.pos.sub(player.pos).squareLength() <= sqrThreshold) {
                             self.startDying();
 
+                            if (self.owner.local) {
+                                sound.playFireballHitOther();
+                            }
+
                             if (player.damage() == .died) {
-                                // reward owner
+                                if (self.owner.local) {
+                                    sound.playScoreUp();
+                                }
+                                self.owner.score += 1;
                             }
 
                             break :updating;

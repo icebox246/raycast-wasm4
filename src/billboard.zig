@@ -8,4 +8,5 @@ pub const Billboard = struct {
     height: u16,
     colors: u16 = 0x4321,
     sprite: *const Sprite,
+    flipped_h: bool = false,
 };
