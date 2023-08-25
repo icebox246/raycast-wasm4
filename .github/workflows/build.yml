@@ -1,0 +1,43 @@
+name: Build and publish the game
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x.x
+
+      - name: Install WASM-4
+        run: npm install -g wasm4
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0
+
+      - name: Build project
+        run: |
+          zig build gen
+          zig build
+
+      - name: Bundle cartridge
+        working-directory: ./zig-out
+        run: |
+          w4 bundle lib/cart.wasm --title MagicStrik --html index.html
+
+      - name: Deploy on itch.io
+        uses: KikimoraGames/itch-publish@v0.0.3
+        with:
+          butlerApiKey: ${{ secrets.BUTLER_API_KEY }}
+          gameData: zig-out/index.html
+          itchUsername: ${{ secrets.ITCH_USERNAME }}
+          itchGameId: ${{ secrets.ITCH_GAMEID }}
+          buildChannel: web

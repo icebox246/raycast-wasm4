@@ -25,6 +25,10 @@ Then run it with:
 w4 run zig-out/lib/cart.wasm
 ```
 
+## Screenshots
+
+![screenshot](./screenshot.png)
+
 ## Credits
 
 Game created using [WASM-4](https://wasm4.org).
